@@ -1,0 +1,32 @@
+# pyproject.toml
+[project]
+name = "multi-agent-system"
+version = "0.1.0"
+description = "Système multi-agent local avec Ollama & LangGraph"
+requires-python = ">=3.11"
+
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-ollama>=0.2.0",
+    "langchain-community>=0.3.0",
+    "langchain-core>=0.3.21",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "duckduckgo-search==6.3.7",
+    "tavily-python==0.5.0",
+    "rich>=13.0.0",          # Pretty printing
+    "structlog>=24.0.0",     # Logging structuré
+    "httpx==0.27.2",
+    "requests==2.32.3",
+    # Visualisation du graph (optionnel)
+    "matplotlib==3.9.2",
+    "pygraphviz==1.13",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ipython>=8.0.0",
+]
