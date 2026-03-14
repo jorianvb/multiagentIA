@@ -54,6 +54,12 @@ def run_synthesizer(state: StoryState) -> StoryState:
             for err in errors:
                 final_text += f"  • {err}\n"
 
+        if state.get("written_continuation"):
+            wc = state["written_continuation"]
+            sections.append(SUITE_ECRITE_SECTION.format(
+                suite_ecrite  = wc.get("suite_ecrite", ""),
+                point_de_fin  = wc.get("point_de_fin", ""),
+            ))
         print("   ✅ Réponse finale générée")
         print(f"   ✅ Longueur : {len(final_text)} caractères")
 

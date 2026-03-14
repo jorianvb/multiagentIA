@@ -1,4 +1,4 @@
-# src/agents/writer.py
+# src/agents/writer_prompt.py
 """Agent spécialisé dans la rédaction de contenu."""
 
 from src.agents.base_agent import BaseAgent

@@ -19,7 +19,7 @@ from agents.synthesizer import run_synthesizer
 def base_state() -> StoryState:
     """État de base pour les tests."""
     return {
-        "existing_story"    : "Elara, une mage, découvrit que son mentor l'avait trahie.",
+            "existing_story"    : "Elara, une mage, découvrit que son mentor l'avait trahie.",
         "user_request"      : "Proposer une suite dramatique",
         "model_name"        : "llama3.1",
         "characters_summary": {},

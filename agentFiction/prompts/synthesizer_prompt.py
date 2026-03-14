@@ -107,3 +107,11 @@ SYNTHESIZER_USER_TEMPLATE = """
 
 Produis la synthèse finale complète selon le format exact demandé.
 """
+SUITE_ECRITE_SECTION = """
+═══════════════════════════════════════
+✍️  SUITE ÉCRITE
+═══════════════════════════════════════
+{suite_ecrite}
+
+📍 Situation à la fin : {point_de_fin}
+"""

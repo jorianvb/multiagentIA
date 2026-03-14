@@ -3,7 +3,7 @@
 
 from langgraph.graph import StateGraph, END
 from state import StoryState
-from agents import run_analyst, run_checker, run_ideator, run_synthesizer
+from agents import run_analyst, run_checker, run_ideator, run_synthesizer, run_writer
 
 
 def should_continue_after_analyst(state: StoryState) -> str:
@@ -36,6 +36,7 @@ def build_story_graph() -> StateGraph:
     graph.add_node("analyst", run_analyst)
     graph.add_node("checker", run_checker)
     graph.add_node("ideator", run_ideator)
+    graph.add_node("writer", run_writer)
     graph.add_node("synthesizer", run_synthesizer)
 
     # Point d'entrée
@@ -53,7 +54,9 @@ def build_story_graph() -> StateGraph:
 
     # Edges fixes pour la suite du pipeline
     graph.add_edge("checker", "ideator")
-    graph.add_edge("ideator", "synthesizer")
+    # L'insérer après l'ideator, avant le synthesizer
+    graph.add_edge("ideator", "writer")
+    graph.add_edge("writer",  "synthesizer")
     graph.add_edge("synthesizer", END)
 
     # Compilation du graphe

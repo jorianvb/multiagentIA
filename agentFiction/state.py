@@ -65,3 +65,6 @@ class StoryState(TypedDict):
     session_id: str
     timestamp: str
     errors: List[str]            # Erreurs non bloquantes accumulées
+    # Ajouter dans StoryState
+    written_continuation: dict | None  # Output de l'agent writer
+
