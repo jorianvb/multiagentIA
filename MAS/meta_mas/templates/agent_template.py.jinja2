@@ -1,0 +1,93 @@
+"""
+{{ agent_description }}
+
+Agent généré automatiquement par Meta-MAS le {{ generation_date }}.
+"""
+import asyncio
+from typing import Any, Dict, List, Optional
+
+from loguru import logger
+
+from agents.base_agent import BaseAgent, Message, MessageType, AgentStatus
+
+
+class {{ class_name }}(BaseAgent):
+    """
+    {{ agent_description }}
+
+    Rôle : {{ role }}
+
+    Responsabilités :
+    {% for resp in responsibilities %}
+    - {{ resp }}
+    {% endfor %}
+    """
+
+    SYSTEM_PROMPT = """{{ system_prompt }}"""
+
+    def __init__(
+        self,
+        name: str = "{{ default_name }}",
+        model: str = "mistral",
+        message_bus=None,
+        memory=None,
+    ):
+        super().__init__(
+            name=name,
+            role="{{ role }}",
+            model=model,
+            system_prompt=self.SYSTEM_PROMPT,
+            message_bus=message_bus,
+            timeout=120,
+        )
+        self.memory_store = memory
+
+    async def act(self, message: Message) -> Message:
+        """
+        Traite un message entrant et retourne une réponse.
+
+        Args:
+            message: Message à traiter.
+
+        Returns:
+            Message de réponse.
+        """
+        logger.info(f"[{self.name}] Traitement du message de {message.sender}")
+        self.status = AgentStatus.ACTING
+
+        try:
+            context = {
+                "tâche": message.content,
+                "expéditeur": message.sender,
+                "métadonnées": str(message.metadata),
+            }
+
+            response_content = await self.think(context)
+
+            return Message(
+                sender=self.name,
+                receiver=message.sender,
+                type=MessageType.RESPONSE,
+                content=response_content,
+                metadata={"original_id": message.id},
+            )
+
+        except Exception as e:
+            logger.error(f"[{self.name}] Erreur: {e}")
+            return Message(
+                sender=self.name,
+                receiver=message.sender,
+                type=MessageType.ERROR,
+                content=f"Erreur dans {self.name}: {str(e)}",
+            )
+        finally:
+            self.status = AgentStatus.IDLE
+
+    {% for method in custom_methods %}
+    async def {{ method.name }}(self, {{ method.params }}) -> {{ method.return_type }}:
+        """{{ method.docstring }}"""
+        # TODO: Implémentation spécifique
+        pass
+
+    {% endfor %}
+

@@ -1,0 +1,111 @@
+# {{ system_name }}
+
+> {{ analysis.description }}
+
+Généré automatiquement par **[Meta-MAS](https://github.com/meta-mas)** le {{ date }}.
+
+---
+
+## Architecture
+
+| Paramètre | Valeur |
+|-----------|--------|
+| **Topologie** | `{{ architecture.topology }}` |
+| **Pattern** | `{{ analysis.communication_pattern }}` |
+| **Agents** | {{ agents | length }} |
+
+**Workflow** : {{ analysis.workflow_description }}
+
+---
+
+## Agents
+
+{% for agent in agents %}
+### `{{ agent.name }}` — {{ agent.role }}
+
+{% if agent.responsibilities %}
+**Responsabilités :**
+{% for r in agent.responsibilities %}
+- {{ r }}
+{% endfor %}
+{% endif %}
+
+{% if agent.inputs is defined %}
+**Entrées :** `{{ agent.inputs | join(", ") }}`
+{% endif %}
+{% if agent.outputs is defined %}
+**Sorties :** `{{ agent.outputs | join(", ") }}`
+{% endif %}
+
+---
+{% endfor %}
+
+## Installation
+
+```bash
+# Prérequis : Python 3.11+, uv, Ollama
+
+# 1. Installer les dépendances
+uv sync
+
+# 2. Configurer l'environnement
+cp .env.example .env
+# Éditer .env selon vos besoins
+
+# 3. S'assurer qu'Ollama tourne
+ollama serve
+ollama pull mistral
+```
+
+## Utilisation
+
+```bash
+uv run python main.py
+```
+
+Le MAS démarre une interface CLI interactive.
+Entrez votre requête et les agents collaboreront pour y répondre.
+
+## Tests
+
+```bash
+uv run pytest tests/ -v
+```
+
+## Structure
+
+```
+{{ system_name | lower }}/
+├── main.py                  # Point d'entrée
+├── pyproject.toml
+├── README.md
+├── .env.example
+├── config/
+│   └── settings.py
+├── agents/
+│   ├── base_agent.py        # Classe abstraite
+{% for agent in agents %}│   ├── {{ agent.name }}.py
+{% endfor %}├── core/
+│   ├── orchestrator.py      # Runner principal
+│   └── message_bus.py       # Bus de messages
+└── tests/
+{% for agent in agents %}    ├── test_{{ agent.name }}.py
+{% endfor %}```
+
+## Flux de données
+
+```
+Utilisateur
+    │
+    ▼
+{% for agent in agents %}{{ agent.name }}{% if not loop.last %} ──► {% endif %}
+{% endfor %}
+    │
+    ▼
+Réponse finale
+```
+
+---
+
+*Généré par Meta-MAS v0.1.0 — {{ date }}*
+

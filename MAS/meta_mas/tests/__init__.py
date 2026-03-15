@@ -1,0 +1,2 @@
+"""Tests du Meta-MAS."""
+

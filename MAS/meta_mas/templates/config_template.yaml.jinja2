@@ -1,0 +1,29 @@
+# Configuration du MAS généré : {{ system_name }}
+# Généré par Meta-MAS le {{ date }}
+
+system:
+  name: "{{ system_name }}"
+  description: "{{ description }}"
+  version: "0.1.0"
+
+ollama:
+  base_url: "http://localhost:11434"
+  default_model: "mistral"
+  timeout: 120
+
+agents:
+  {% for agent in agents %}
+  {{ agent.name }}:
+    name: "{{ agent.name }}"
+    class: "{{ agent.class_name }}"
+    role: "{{ agent.role }}"
+    model: "mistral"
+    timeout: 120
+  {% endfor %}
+
+message_bus:
+  max_history: 500
+
+logging:
+  level: "INFO"
+

@@ -1,0 +1,60 @@
+# Configuration des agents du Meta-MAS
+# Chaque agent a un nom, rôle, modèle préféré et paramètres spécifiques
+
+meta_mas:
+  name: "Meta-MAS"
+  version: "0.1.0"
+  description: "Système Multi-Agent Méta qui génère d'autres MAS"
+
+agents:
+  orchestrator:
+    name: "Orchestrator"
+    role: "Master Coordinator"
+    model: "mistral"
+    timeout: 60
+    description: "Coordonne le pipeline complet de génération du MAS"
+
+  analyst:
+    name: "Analyst"
+    role: "Requirements Analyst"
+    model: "mistral"
+    timeout: 120
+    description: "Analyse la demande et identifie les agents nécessaires"
+
+  architect:
+    name: "Architect"
+    role: "System Architect"
+    model: "mistral"
+    timeout: 120
+    description: "Conçoit la topologie et les protocoles de communication"
+
+  code_generator:
+    name: "CodeGenerator"
+    role: "Code Generator"
+    model: "mistral"
+    timeout: 180
+    description: "Génère le code Python de chaque agent"
+
+  validator:
+    name: "Validator"
+    role: "Code Validator"
+    model: "mistral"
+    timeout: 90
+    description: "Valide la cohérence et la syntaxe du code généré"
+
+  deployer:
+    name: "Deployer"
+    role: "System Deployer"
+    model: "mistral"
+    timeout: 60
+    description: "Crée la structure de fichiers dans le dossier cible"
+
+# Paramètres du bus de messages
+message_bus:
+  max_history: 1000
+  default_timeout: 30.0
+
+# Paramètres de la mémoire partagée
+memory:
+  max_history: 500
+
