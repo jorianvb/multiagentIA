@@ -1,69 +1,125 @@
 # graph.py
 # Définition du graphe LangGraph orchestrant tous les agents
+#
+# Workflow complet :
+#
+#   orchestrator
+#        │
+#        ├─► [write]  analyst → writer → validator → synthesizer → END
+#        │
+#        └─► [ideas]  analyst ──┬──► checker → ideator ──► synthesizer → END
+#                               │
+#                               └──► synthesizer (si erreur critique)
 
 from langgraph.graph import StateGraph, END
 from state import StoryState
-from agents import run_analyst, run_checker, run_ideator, run_synthesizer, run_writer
+from agents import (
+    run_analyst, run_checker, run_ideator,
+    run_synthesizer, run_writer, run_orchestrator, run_validator
+)
 
 
-def should_continue_after_analyst(state: StoryState) -> str:
+# ─────────────────────────────────────────────────────────────────────────────
+# Fonctions de routage conditionnel
+# ─────────────────────────────────────────────────────────────────────────────
+
+def route_after_orchestrator(state: StoryState) -> str:
     """
-    Condition de routage après l'agent analyste.
-    Si erreur critique → fin, sinon → checker
+    Après l'orchestrateur : toujours passer par l'analyste.
+    L'analyste est nécessaire dans les deux chemins pour le contexte.
+    """
+    return "analyst"
+
+
+def route_after_analyst(state: StoryState) -> str:
+    """
+    Après l'analyste : erreur critique → synthesizer (mode dégradé)
+    Sinon, selon la décision de l'orchestrateur.
     """
     errors = state.get("errors", [])
-    critical_errors = [e for e in errors if "ANALYSTE" in e]
+    critical = [e for e in errors if "ANALYSTE" in e]
 
-    if critical_errors and not state.get("characters_summary"):
-        print("   ⚠️  Erreur critique détectée, passage en mode dégradé")
-        return "synthesizer"  # Saute au synthétiseur avec les données disponibles
-    return "checker"
+    if critical and not state.get("characters_summary"):
+        print("   ⚠️  Erreur critique analyste → mode dégradé (synthesizer)")
+        return "synthesizer"
 
+    decision = state.get("routing_decision", "ideas")
+    if decision == "write":
+        print("   🔀 Routage → chemin ÉCRITURE (writer)")
+        return "writer"
+    else:
+        print("   🔀 Routage → chemin IDÉES (checker)")
+        return "checker"
+
+
+def route_after_validator(state: StoryState) -> str:
+    """
+    Après le validateur : toujours vers le synthesizer.
+    La boucle de correction utilisateur est gérée dans main.py,
+    pas dans le graphe (évite la complexité des checkpoints).
+    """
+    return "synthesizer"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Construction du graphe
+# ─────────────────────────────────────────────────────────────────────────────
 
 def build_story_graph() -> StateGraph:
     """
     Construit et compile le graphe LangGraph.
 
-    Flux : analyst → checker → ideator → synthesizer → END
-
-    En cas d'erreur critique de l'analyste,
-    on saute directement au synthétiseur.
+    Chemin "write"  : orchestrator → analyst → writer → validator → synthesizer → END
+    Chemin "ideas"  : orchestrator → analyst → checker → ideator → synthesizer → END
+    Mode dégradé    : orchestrator → analyst → synthesizer → END
     """
-    # Initialisation du graphe avec notre état
     graph = StateGraph(StoryState)
 
-    # Ajout des nœuds (chaque agent est un nœud)
-    graph.add_node("analyst", run_analyst)
-    graph.add_node("checker", run_checker)
-    graph.add_node("ideator", run_ideator)
-    graph.add_node("writer", run_writer)
-    graph.add_node("synthesizer", run_synthesizer)
+    # ── Nœuds ────────────────────────────────────────────────────────────
+    graph.add_node("orchestrator", run_orchestrator)
+    graph.add_node("analyst",      run_analyst)
+    graph.add_node("checker",      run_checker)
+    graph.add_node("ideator",      run_ideator)
+    graph.add_node("writer",       run_writer)
+    graph.add_node("validator",    run_validator)
+    graph.add_node("synthesizer",  run_synthesizer)
 
-    # Point d'entrée
-    graph.set_entry_point("analyst")
+    # ── Point d'entrée : orchestrateur ───────────────────────────────────
+    graph.set_entry_point("orchestrator")
 
-    # Edges conditionnels depuis l'analyste
+    # orchestrator → analyst (toujours)
+    graph.add_edge("orchestrator", "analyst")
+
+
+    # analyst → writer | checker | synthesizer (conditionnel)
     graph.add_conditional_edges(
         "analyst",
-        should_continue_after_analyst,
+        route_after_analyst,
         {
-            "checker": "checker",
+            "writer":      "writer",
+            "checker":     "checker",
             "synthesizer": "synthesizer"
         }
     )
 
-    # Edges fixes pour la suite du pipeline
-    graph.add_edge("checker", "ideator")
-    # L'insérer après l'ideator, avant le synthesizer
-    graph.add_edge("ideator", "writer")
-    graph.add_edge("writer",  "synthesizer")
+    # ── Chemin ÉCRITURE ───────────────────────────────────────────────────
+    # writer → validator → synthesizer
+    graph.add_edge("writer",    "validator")
+    graph.add_edge("validator", "synthesizer")
+
+    # ── Chemin IDÉES ─────────────────────────────────────────────────────
+    # checker → ideator → synthesizer
+    graph.add_edge("checker",  "ideator")
+    graph.add_edge("ideator",  "synthesizer")
+
+    # ── Fin ───────────────────────────────────────────────────────────────
     graph.add_edge("synthesizer", END)
 
-    # Compilation du graphe
     compiled = graph.compile()
 
     print("✅ Graphe LangGraph compilé avec succès")
-    print("   Flux : analyst → checker → ideator → synthesizer → END")
+    print("   Flux write : orchestrator → analyst → writer → validator → synthesizer → END")
+    print("   Flux ideas : orchestrator → analyst → checker → ideator → synthesizer → END")
 
     return compiled
 

@@ -79,9 +79,10 @@ Structure exacte :
 """
 ANALYST_USER_TEMPLATE = """
 # TEXTE DE L'AUTEUR (SOURCE DE VÉRITÉ)
-# {existing_story}
+ {existing_story}
 # DEMANDE SPÉCIFIQUE DE L'AUTEUR
 {user_request}
+
 
 Analyse ce texte selon tes instructions. 
 Rappel : marque toute information incertaine avec "incertain: true".

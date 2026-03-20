@@ -1,3 +1,6 @@
+# agents/writer.py
+# Agent writer : rédige la suite de l'histoire en s'appuyant sur le contexte complet
+
 import json
 import logging
 from langchain_ollama import ChatOllama
@@ -6,20 +9,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from state import StoryState
 from prompts.writer_prompt import WRITER_SYSTEM_PROMPT, WRITER_USER_TEMPLATE
 
-
 logger = logging.getLogger(__name__)
-# Mots-clés qui déclenchent l'agent writer
-WRITE_TRIGGERS = [
-    "écris", "ecris", "rédige", "redige", "continue",
-    "développe", "developpe", "raconte", "montre",
-    "suite", "passage", "scène", "scene",
-]
-
-
-def should_write(user_request: str) -> bool:
-    """Détermine si l'utilisateur veut qu'on écrive la suite."""
-    request_lower = user_request.lower()
-    return any(trigger in request_lower for trigger in WRITE_TRIGGERS)
 
 
 def _parse_writer_response(raw: str) -> dict:
@@ -27,6 +17,9 @@ def _parse_writer_response(raw: str) -> dict:
     try:
         start = raw.find("{")
         end   = raw.rfind("}") + 1
+        print (raw)
+        print (" la suite en brute")
+        print (raw[start:end])
         if start != -1 and end > start:
             return json.loads(raw[start:end])
     except json.JSONDecodeError as e:
@@ -44,13 +37,16 @@ def _parse_writer_response(raw: str) -> dict:
 
 
 def run_writer(state: StoryState) -> StoryState:
-    """Agent qui écrit la suite de l'histoire si l'utilisateur le demande."""
+    """
+    Agent writer : rédige la suite de l'histoire.
 
-    user_request = state.get("user_request", "").strip()
-
-    # ── Guard : on n'écrit que si demandé ────────────────────────────────
-    if not should_write(user_request):
-        logger.info("Writer: pas de demande d'écriture détectée, passage ignoré.")
+    Activé uniquement si routing_decision == "write".
+    Prend en compte les corrections utilisateur via writer_correction.
+    Utilise le contexte complet de l'analyste.
+    """
+    # ── Guard : on n'écrit que si l'orchestrateur l'a décidé ─────────────
+    if state.get("routing_decision") != "write":
+        logger.info("Writer: chemin 'ideas' détecté, agent ignoré.")
         return {**state, "written_continuation": None}
 
     existing_story = state.get("existing_story", "").strip()
@@ -61,32 +57,54 @@ def run_writer(state: StoryState) -> StoryState:
             "errors": state.get("errors", []) + ["Writer: histoire vide, impossible d'écrire la suite."],
         }
 
-    # ── Préparation du contexte ───────────────────────────────────────────
+    iteration = state.get("writer_iteration", 0) + 1
+    correction = state.get("writer_correction", "").strip()
+
+    print(f"\n✍️  [AGENT WRITER] Rédaction de la suite... (itération {iteration})")
+    if correction:
+        print(f"   📝 Correction demandée : {correction[:80]}...")
+
+    # ── Enrichissement du prompt avec la correction si fournie ───────────
+    user_request = state.get("user_request", "").strip()
+    if correction:
+        user_request = f"{user_request}\n\n[CORRECTION DEMANDÉE PAR L'AUTEUR]: {correction}"
+
+    # ── Préparation du contexte complet (issu de l'analyste) ─────────────
     user_message = WRITER_USER_TEMPLATE.format(
         existing_story    = existing_story,
-        characters_json   = json.dumps(state.get("characters_summary", {}), ensure_ascii=False, indent=2),
-        plots_json        = json.dumps(state.get("plots_summary",      {}), ensure_ascii=False, indent=2),
-        consistency_json  = json.dumps(state.get("consistency_report", {}), ensure_ascii=False, indent=2),
-        story_ideas_json  = json.dumps(state.get("story_ideas",        []), ensure_ascii=False, indent=2),
+        characters_json   = json.dumps(state.get("characters_summary", {}),
+                                       ensure_ascii=False, indent=2),
+        plots_json        = json.dumps(state.get("plots_summary", {}),
+                                       ensure_ascii=False, indent=2),
+        consistency_json  = json.dumps(state.get("consistency_report", {}),
+                                       ensure_ascii=False, indent=2),
+        story_ideas_json  = json.dumps(state.get("story_ideas", []),
+                                       ensure_ascii=False, indent=2),
         user_request      = user_request,
     )
 
     # ── Appel LLM ────────────────────────────────────────────────────────
     try:
-        llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL, temperature=0.8)
-        messages = [
+        llm = ChatOllama(
+            model=state["model_name"],
+            temperature=0.75,     # Créativité modérée pour cohérence
+        )
+        print("   📡 Rédaction en cours...")
+        response = llm.invoke([
             SystemMessage(content=WRITER_SYSTEM_PROMPT),
             HumanMessage(content=user_message),
-        ]
-        response = llm.invoke(messages)
-        parsed   = _parse_writer_response(response.content)
+        ])
+        parsed = _parse_writer_response(response.content)
 
-        logger.info(f"Writer: suite écrite ({len(parsed.get('suite_ecrite',''))} chars)")
+        nb_chars = len(parsed.get("suite_ecrite", ""))
+        print(f"   ✅ Suite écrite : {nb_chars} caractères")
+        print(f"   🎭 Ton narratif : {parsed.get('ton_narratif', 'N/A')}")
+        print(f"   📍 Point de fin : {parsed.get('point_de_fin', 'N/A')[:80]}")
 
         return {
             **state,
             "written_continuation": parsed,
-            "errors": state.get("errors", []),
+            "writer_iteration": iteration,
         }
 
     except Exception as e:
@@ -94,5 +112,6 @@ def run_writer(state: StoryState) -> StoryState:
         return {
             **state,
             "written_continuation": None,
+            "writer_iteration": iteration,
             "errors": state.get("errors", []) + [f"Writer: {str(e)}"],
         }

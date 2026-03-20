@@ -3,7 +3,6 @@
 # Cet état est la "mémoire de travail" du système pour une session d'analyse
 
 from typing import TypedDict, Optional, List, Dict, Any
-from datetime import datetime
 
 
 class PersonnageInfo(TypedDict):
@@ -52,19 +51,27 @@ class StoryState(TypedDict):
     user_request: str            # La demande spécifique de l'auteur
     model_name: str              # Modèle Ollama à utiliser
 
+    # === ORCHESTRATEUR ===
+    routing_decision: str                            # "write" | "ideas"
+    orchestrator_reasoning: str                      # Raisonnement de l'orchestrateur
+
     # === OUTPUTS DES AGENTS ===
     characters_summary: Dict[str, PersonnageInfo]   # Agent Analyste
     plots_summary: Dict[str, IntrigueInfo]           # Agent Analyste
     story_context: str                               # Résumé de situation actuelle
     consistency_report: Dict[str, Any]               # Agent Cohérence
     story_ideas: List[IdeeSuite]                     # Agent Créatif
+    written_continuation: Optional[Dict[str, Any]]  # Agent Writer
+    validation_report: Dict[str, Any]               # Agent Validateur
     final_response: str                              # Agent Synthèse
+
+    # === BOUCLE DE CORRECTION ===
+    writer_correction: str       # Correction demandée par l'utilisateur (si relance)
+    writer_iteration: int        # Nombre d'itérations du writer
 
     # === MÉTADONNÉES ===
     iteration_count: int
     session_id: str
     timestamp: str
     errors: List[str]            # Erreurs non bloquantes accumulées
-    # Ajouter dans StoryState
-    written_continuation: dict | None  # Output de l'agent writer
 

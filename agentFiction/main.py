@@ -13,8 +13,11 @@ try:
     from rich.prompt import Prompt, Confirm
     from rich.markdown import Markdown
     RICH_AVAILABLE = True
+    console = Console()
 except ImportError:
     RICH_AVAILABLE = False
+    Console = None  # type: ignore
+    console = None
     print("⚠️  'rich' non installé. Interface basique activée.")
 
 from graph import story_graph
@@ -22,12 +25,18 @@ from state import StoryState
 from memory.narrative_bible import NarrativeBible
 from memory.short_term import ShortTermMemory
 from utils.output_formatter import save_response_to_file
-from utils.scoring import rank_ideas
+# Import direct des agents writer/validator pour la boucle de correction
+from agents.writer import run_writer
+from agents.validator import run_validator
+from agents.synthesizer import run_synthesizer
 
+
+from graph import story_graph
 console = Console() if RICH_AVAILABLE else None
 
 
 def _check_ollama_connection(model_name: str) -> bool:
+
     """
     Vérifie qu'Ollama est disponible et que le modèle est chargé.
     Retourne True si OK, False sinon.
@@ -37,7 +46,6 @@ def _check_ollama_connection(model_name: str) -> bool:
         from langchain_core.messages import HumanMessage
 
         llm = ChatOllama(model=model_name, temperature=0)
-        # Test minimal : une question simple
         llm.invoke([HumanMessage(content="Réponds juste 'ok'")])
         print(f"   ✅ Ollama connecté avec le modèle '{model_name}'")
         return True
@@ -47,11 +55,134 @@ def _check_ollama_connection(model_name: str) -> bool:
         return False
 
 
+def _writer_correction_loop(
+    state: StoryState,
+    bible: NarrativeBible | None,
+    session_id: str
+) -> StoryState:
+    """
+    Gère la boucle de validation / correction de l'agent writer.
+
+    Affiche la suite écrite à l'utilisateur, demande sa validation
+    ou ses corrections, relance le writer si nécessaire.
+    Lorsque l'utilisateur valide, met à jour la bible narrative.
+
+    Retourne l'état final après validation.
+    """
+    MAX_ITERATIONS = 5
+
+    while True:
+        written = state.get("written_continuation")
+        validation = state.get("validation_report", {})
+        verdict = validation.get("verdict", "APPROUVÉ")
+
+        # ── Affichage du rapport de validation interne ────────────────────
+        print("\n" + "─" * 60)
+        score = validation.get("score_global", "N/A")
+        icon  = {"APPROUVÉ": "✅", "À AMÉLIORER": "⚠️ ", "REJETÉ": "❌"}.get(verdict, "❓")
+        print(f"{icon} Validation interne : {verdict}  |  Score : {score}/10")
+
+        # Afficher les problèmes détectés par le validateur
+        problemes = validation.get("problemes", [])
+        if problemes:
+            print("\n🔬 Problèmes détectés par le validateur :")
+            for pb in problemes:
+                sev_icon = {"critique": "🔴", "important": "🟡", "mineur": "🟢"}.get(
+                    pb.get("severite", "mineur"), "⚪")
+                print(f"   {sev_icon} {pb.get('description', '')} — {pb.get('correction_suggeree', '')}")
+
+        # ── Affichage de la suite écrite ──────────────────────────────────
+        print("\n" + "═" * 60)
+        print("✍️  SUITE ÉCRITE PAR L'AGENT WRITER")
+        print("═" * 60)
+
+        if written and written.get("suite_ecrite"):
+            print(written["suite_ecrite"])
+            print(f"\n📍 Situation à la fin : {written.get('point_de_fin', 'N/A')}")
+        else:
+            print("⚠️  Aucune suite disponible.")
+            return state
+
+        iteration = state.get("writer_iteration", 1)
+        print(f"\n(itération writer : {iteration}/{MAX_ITERATIONS})")
+        print("═" * 60)
+
+        # ── Demande de validation à l'utilisateur ─────────────────────────
+        print("\n📋 Que souhaitez-vous faire ?")
+        print("  [v] Valider cette suite (mettre à jour la bible)")
+        print("  [c] Demander une correction")
+        if verdict != "APPROUVÉ":
+            print("  [f] Forcer la validation malgré les avertissements")
+        print("  [a] Abandonner (annuler l'écriture)")
+
+        choix = input("\n   Votre choix : ").strip().lower()
+
+        if choix in ("v", "f"):
+            # ── VALIDATION ────────────────────────────────────────────────
+            print("\n✅ Suite validée par l'auteur !")
+
+            # Mise à jour de la bible narrative
+            if bible and state.get("characters_summary"):
+                print("📚 Mise à jour de la bible narrative...")
+                bible.update_from_analysis(
+                    characters = state["characters_summary"],
+                    plots      = state["plots_summary"],
+                    context    = state.get("story_context", ""),
+                    session_id = session_id
+                )
+                # Ajouter les événements de la suite à la bible si possible
+                if written and written.get("evenements_cles"):
+                    evt_changes = []
+                    for evt in written["evenements_cles"]:
+                        bible._bible.setdefault("chronologie", []).append({
+                            "evenement":  evt,
+                            "session_id": session_id,
+                            "timestamp":  datetime.now().isoformat()
+                        })
+                        evt_changes.append(f"Événement ajouté : {evt}")
+                    bible._save(evt_changes, session_id)
+                    print(f"   ✅ {len(written['evenements_cles'])} événement(s) ajouté(s) à la chronologie")
+
+            return state
+
+        elif choix == "c":
+            # ── CORRECTION ────────────────────────────────────────────────
+            if iteration >= MAX_ITERATIONS:
+                print(f"⚠️  Nombre maximum d'itérations atteint ({MAX_ITERATIONS}). Validation forcée.")
+                return state
+
+            print("\n📝 Décrivez la correction souhaitée :")
+            print("   (ex: 'Le personnage X doit être plus hésitant',")
+            print("        'Ajoute plus d'action', 'Le ton est trop formel')")
+            correction = input("   Votre correction : ").strip()
+
+            if not correction:
+                print("   ⚠️  Aucune correction fournie, relance identique.")
+
+            # Relance du writer avec la correction
+            print("\n🔄 Relance de l'agent writer avec la correction...")
+            state = {**state, "writer_correction": correction}
+            state = run_writer(state)
+            state = run_validator(state)
+
+            # Mise à jour de la réponse finale avec la nouvelle suite
+            state = run_synthesizer(state)
+
+        elif choix == "a":
+            # ── ABANDON ───────────────────────────────────────────────────
+            print("\n🚫 Écriture annulée. Retour au menu principal.")
+            state = {**state, "written_continuation": None}
+            return state
+
+        else:
+            print("❌ Option invalide.")
+
+
 def run_story_system(
         story_text: str,
         user_request: str,
         project_name: str = "mon_projet",
-        model_name: str = "llama3.1",
+        model_name: str = "llama3.2",
         bible: NarrativeBible = None,
         short_memory: ShortTermMemory = None
 ) -> tuple[str, StoryState]:
@@ -72,6 +203,7 @@ def run_story_system(
 
     # ── Vérification Ollama ──────────────────────────────────────────────
     print("\n🔌 Vérification de la connexion Ollama...")
+    print(f"\n🔌 ${story_text}")
     if not _check_ollama_connection(model_name):
         error_msg = (
             f"❌ Impossible de se connecter à Ollama avec '{model_name}'.\n"
@@ -114,19 +246,29 @@ def run_story_system(
 
     # ── Construction de l'état initial ───────────────────────────────────
     initial_state: StoryState = {
-        "existing_story"    : enriched_story,
-        "user_request"      : user_request,
-        "model_name"        : model_name,
-        "characters_summary": {},
-        "plots_summary"     : {},
-        "story_context"     : "",
-        "consistency_report": {},
-        "story_ideas"       : [],
-        "final_response"    : "",
-        "iteration_count"   : 0,
-        "session_id"        : session_id,
-        "timestamp"         : timestamp,
-        "errors"            : []
+        "existing_story"        : enriched_story,
+        "user_request"          : user_request,
+        "model_name"            : model_name,
+        # Orchestrateur
+        "routing_decision"      : "",
+        "orchestrator_reasoning": "",
+        # Outputs agents
+        "characters_summary"    : {},
+        "plots_summary"         : {},
+        "story_context"         : "",
+        "consistency_report"    : {},
+        "story_ideas"           : [],
+        "written_continuation"  : None,
+        "validation_report"     : {},
+        "final_response"        : "",
+        # Boucle de correction
+        "writer_correction"     : "",
+        "writer_iteration"      : 0,
+        # Méta
+        "iteration_count"       : 0,
+        "session_id"            : session_id,
+        "timestamp"             : timestamp,
+        "errors"                : []
     }
 
     # ── Exécution du graphe ───────────────────────────────────────────────
@@ -141,15 +283,23 @@ def run_story_system(
         print(error_msg)
         return error_msg, initial_state
 
-    # ── Mise à jour de la bible narrative ────────────────────────────────
-    if bible and final_state.get("characters_summary"):
-        print("\n📚 Mise à jour de la bible narrative...")
-        bible.update_from_analysis(
-            characters  = final_state["characters_summary"],
-            plots       = final_state["plots_summary"],
-            context     = final_state["story_context"],
-            session_id  = session_id
+    # ── Boucle de validation utilisateur (chemin "write" uniquement) ──────
+    if final_state.get("routing_decision") == "write":
+        final_state = _writer_correction_loop(
+            state      = final_state,
+            bible      = bible,
+            session_id = session_id
         )
+    else:
+        # Chemin "ideas" : mise à jour classique de la bible
+        if bible and final_state.get("characters_summary"):
+            print("\n📚 Mise à jour de la bible narrative...")
+            bible.update_from_analysis(
+                characters = final_state["characters_summary"],
+                plots      = final_state["plots_summary"],
+                context    = final_state.get("story_context", ""),
+                session_id = session_id
+            )
 
     # ── Mise à jour de la mémoire court terme ────────────────────────────
     if short_memory:
@@ -282,7 +432,9 @@ def cli_interface():
 
         # ── Demande spécifique de l'auteur ───────────────────────────────
         print("\n💬 Quelle est votre demande spécifique ?")
-        print("   (ex: 'développer le personnage de X', 'trouver une suite dramatique')")
+        print("   • Pour écrire la suite  : 'Écris la suite où X rencontre Y'")
+        print("   • Pour des idées        : 'Propose-moi des pistes pour la suite'")
+        print("   • Analyse générale      : laisser vide")
         user_request = input("   Votre demande : ").strip()
         if not user_request:
             user_request = "Analyse générale et propositions de suite"
@@ -297,10 +449,12 @@ def cli_interface():
             short_memory = short_memory
         )
 
-        # ── Affichage de la réponse ──────────────────────────────────────
-        print("\n" + "═" * 60)
-        print(response)
-        print("═" * 60)
+        # ── Affichage de la réponse finale (chemin "ideas") ───────────────
+        # (pour le chemin "write", la suite est déjà affichée dans la boucle)
+        if state.get("routing_decision") != "write":
+            print("\n" + "═" * 60)
+            print(response)
+            print("═" * 60)
 
         # ── Option de sauvegarde supplémentaire ──────────────────────────
         save_extra = input("\n💾 Sauvegarder aussi en JSON ? (o/N) : ").strip().lower()

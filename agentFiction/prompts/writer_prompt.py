@@ -14,7 +14,8 @@ CONTRAINTES DE COHÉRENCE :
 - Les événements passés sont immuables
 - Les capacités/limites des personnages sont fixées par la trame
 
-RETOURNE un JSON avec cette structure exacte :
+RETOURNE UNIQUEMENT un objet JSON valide, sans aucun texte avant ou après, sans bloc markdown (pas de ```json).
+La structure exacte attendue est :
 {
   "suite_ecrite": "Le texte narratif complet de la suite...",
   "personnages_impliques": ["nom1", "nom2"],

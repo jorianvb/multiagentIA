@@ -45,6 +45,21 @@ def run_synthesizer(state: StoryState) -> StoryState:
 
         final_text = response.content
 
+        # Ajout de la suite écrite si présente (chemin "write")
+        wc = state.get("written_continuation")
+        if wc and wc.get("suite_ecrite", "").strip():
+            from prompts.synthesizer_prompt import SUITE_ECRITE_SECTION
+            final_text += "\n\n" + SUITE_ECRITE_SECTION.format(
+                suite_ecrite = wc.get("suite_ecrite", ""),
+                point_de_fin = wc.get("point_de_fin", ""),
+            )
+
+        # Ajout du rapport de validation si pertinent
+        vr = state.get("validation_report", {})
+        verdict = vr.get("verdict", "")
+        if verdict and verdict != "APPROUVÉ":
+            final_text += f"\n\n⚠️  Validation : {verdict} (score {vr.get('score_global', '?')}/10)"
+
         # Ajout des erreurs accumulées si nécessaire
         errors = state.get("errors", [])
         if errors:
@@ -54,12 +69,6 @@ def run_synthesizer(state: StoryState) -> StoryState:
             for err in errors:
                 final_text += f"  • {err}\n"
 
-        if state.get("written_continuation"):
-            wc = state["written_continuation"]
-            sections.append(SUITE_ECRITE_SECTION.format(
-                suite_ecrite  = wc.get("suite_ecrite", ""),
-                point_de_fin  = wc.get("point_de_fin", ""),
-            ))
         print("   ✅ Réponse finale générée")
         print(f"   ✅ Longueur : {len(final_text)} caractères")
 
